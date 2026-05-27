@@ -1,0 +1,107 @@
+# docker-compose.yml
+#
+# Example stack: nginx cache in front of moov/watchman:v0.62.0
+# for OFAC, US CSL, and other government sanctions lists.
+#
+# Volumes:
+#   - cache-config (via bind mount): easy to edit nginx.conf without image rebuild
+#   - cache-storage: named volume for persistent 24h proxy cache across restarts
+#
+# Usage:
+#   docker compose up -d --build --wait
+#   # watchman will download lists via http://cache:8080/...
+#   curl http://localhost:8084/ping
+#   docker compose down -v
+
+services:
+  cache:
+    build:
+      context: docker/nginx-cache
+      dockerfile: Dockerfile
+    image: watchman-cache:local
+    container_name: watchman-cache
+    ports:
+      - "3000:8080"   # Matches common OFAC_DOWNLOAD_TEMPLATE=http://localhost:3000/%s examples
+    volumes:
+      # Bind mount for config: edit locally, `docker compose restart cache` to apply
+      - ./docker/nginx-cache/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Named volume for cache storage (CSVs, headers, etc). Persists 24h+ cached responses.
+      - cache-storage:/var/cache/nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+      start_period: 15s   # Give nginx time to start listening; --wait and CI runners can be slow
+    restart: unless-stopped
+    # Resource hints (adjust for prod)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 256M
+
+  watchman:
+    image: moov/watchman:v0.62.0
+    container_name: watchman
+    ports:
+      - "8084:8084"   # HTTP API (search, etc.)
+      - "9094:9094"   # Admin (version, live health, metrics)
+    environment:
+      # Which lists to load at startup (comma separated).
+      #
+      # Primary set for this cache example: the US CSV-based lists (OFAC, Non-SDN, CSL)
+      # plus EU CSL and FinCEN 311. These are the lists the nginx config + hardening
+      # (redirect following, SNI fixes, long timeouts, 48h TTL on large files) were built for.
+      # US lists are CSV only. We intentionally do NOT default to XML lists here.
+      - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_fincen_311,eu_csl
+
+      # Point all templated downloads at the nginx cache (root + %s filename).
+      # Watchman does fmt.Sprintf(TEMPLATE, "filename.csv") for each file it needs.
+      - OFAC_DOWNLOAD_TEMPLATE=http://cache:8080/%s
+      - US_CSL_DOWNLOAD_TEMPLATE=http://cache:8080/%s
+      - US_NON_SDN_DOWNLOAD_TEMPLATE=http://cache:8080/%s
+
+      # Non-templated (full URL) lists. Must match the exact path nginx serves.
+      - EU_CSL_DOWNLOAD_URL=http://cache:8080/eu_csl.csv
+      - FINCEN_311_DOWNLOAD_URL=http://cache:8080/fincen_311.html
+
+      # ---------------------------------------------------------------------
+      # Optional lists (UK, UN). These use different env var names and formats.
+      # UN is XML (not CSV). If you add them to INCLUDED_LISTS you MUST also
+      # set their URL vars below (otherwise they bypass the cache and hit the
+      # public internet directly).
+      #
+      # WARNING: Do NOT copy the UN XML URL into any US_CSL_* variable.
+      # Setting US_CSL_DOWNLOAD_URL (or TEMPLATE) to the UN consolidated.xml
+      # causes the US CSL loader (which always does CSV parsing) to receive
+      # XML bytes → "loading US CSL records: parsing US CSL: failed to parse CSV:
+      # unexpected EOF". The error will contain the scsanctions.un.org URL.
+      # US lists need CSV endpoints (via this cache or the trade.gov default).
+      # ---------------------------------------------------------------------
+      # - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_fincen_311,eu_csl,uk_csl,un_csl
+      # - UK_SANCTIONS_LIST_URL=http://cache:8080/UK_Sanctions_List.csv
+      # - UN_CONSOLIDATED_LIST_URL=http://cache:8080/un_consolidated.xml
+
+      # Optional: slow down or disable periodic refresh during testing
+      # - DATA_REFRESH_INTERVAL=24h
+
+      # Logging / tuning (optional)
+      - LOG_FORMAT=plain
+    depends_on:
+      cache:
+        condition: service_healthy
+    healthcheck:
+      # The image already defines a healthcheck against ${HEALTH_PORT}/live (9094/live)
+      # We just inherit it. Initial data load can take 20-90s on cold cache.
+      test: ["CMD", "curl", "-f", "http://localhost:9094/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+    # If you need to debug downloads, increase log level or attach to container logs
+
+volumes:
+  cache-storage:
+    driver: local
