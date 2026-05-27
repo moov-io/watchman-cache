@@ -14,7 +14,7 @@ This project fronts watchman with a tightly scoped nginx cache that:
 ## Features
 
 - **Exact allow-list** — only the files watchman actually requests are served (no open proxy)
-- **302 redirect following** inside nginx (`@follow_redirect`) for all OFAC/Non-SDN files so the final CSV is cached under the stable filename
+- **302 redirect following** inside nginx (`@follow_redirect`) so the final content is cached under the stable filename for all supported lists
 - **Hardened large-file handling** — 512 KiB buffers, 180 s read timeouts, `proxy_next_upstream` retries on the critical paths
 - **IPv6 safety** — resolver configured with `ipv6=off` (public DNS with fallback behavior)
 - **Long-lived cache** — 48 h for the large/flaky lists, 7 d inactive eviction on the cache zone
@@ -193,7 +193,7 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 
 ## Troubleshooting
 
-**First start is slow** — expected on a cold volume. 4–7 files are fetched from the internet. Subsequent starts should be seconds.
+**First start is slow** — expected on a cold volume. With the default `INCLUDED_LISTS`, 11 files are fetched from the internet on a true cold start (4 OFAC + 4 Non-SDN + CSL + EU CSL + FinCEN 311). Subsequent starts should be seconds.
 
 **Still seeing "unexpected EOF" or "max retries" on cold start?**
 - This is almost always a transient origin failure during the initial parallel burst.
