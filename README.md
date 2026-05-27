@@ -1,6 +1,6 @@
 # watchman-cache
 
-A production-hardened nginx reverse-proxy cache for [moov/watchman](https://github.com/moov-io/watchman) sanctions list downloads.
+A nginx reverse-proxy cache for [moov/watchman](https://github.com/moov-io/watchman) sanctions list downloads.
 
 Government list endpoints (OFAC, trade.gov/Azure, S3 pre-signed URLs, EU, etc.) are frequently flaky. Large CSV responses are regularly truncated mid-transfer, IPv6 records cause connection failures, and 302 redirects to short-lived S3 URLs cause watchman to bypass any cache and hit the origins directly. The result is repeated "unexpected EOF", "max retries", and fatal "problem during initial download" crashes during startup.
 
@@ -19,7 +19,7 @@ This project fronts watchman with a tightly scoped nginx cache that:
 - **IPv6 safety** — resolver configured with `ipv6=off` (public DNS with fallback behavior)
 - **Long-lived cache** — 48 h for the large/flaky lists, 7 d inactive eviction on the cache zone
 - **Stale-while-revalidate** + background updates for resilience during origin outages
-- **Named volume persistence** — the single most important production lever
+- **Named volume persistence** — needed for durable caching
 - Pure-stdlib Go integration test that validates the full cold-start flow
 
 ## Quick Start
@@ -91,7 +91,7 @@ The named volume `cache-storage` mounted at `/var/cache/nginx` is the highest-le
 
 - A successful cold start populates the volume with complete copies.
 - Every future `docker compose up` (without `-v`) is fast and almost entirely cache hits.
-- In production, **never** delete this volume on routine deploys or restarts.
+- In production, **do not** delete this volume on routine deploys or restarts.
 
 To force a completely cold start (useful for testing):
 
