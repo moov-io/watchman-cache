@@ -100,6 +100,34 @@ docker compose down -v
 docker compose up -d --build --wait
 ```
 
+## Outage Resilience & Stale Content Serving
+
+This is the mechanism that protects watchman when government sources are completely unavailable for extended periods (the US CSL has had multi-day outages, for example).
+
+### How it works
+
+- Cached responses have a **freshness lifetime** controlled by `proxy_cache_valid`:
+  - **48 hours** for the large/flaky lists: `/consolidated.csv`, `/eu_csl.csv`, and all 8 OFAC/Non-SDN files (`sdn*.csv`, `CONS_*.CSV`, etc.)
+  - **24 hours** for smaller lists (the global default)
+- After the freshness lifetime expires, the cached copy is marked **stale**.
+- When the origin is down or returns errors, the directive `proxy_cache_use_stale error timeout ... http_5xx updating` tells nginx to **serve the stale copy** to the client (watchman) instead of failing the request.
+- `proxy_cache_background_update on` lets nginx attempt to refresh the content in the background while still serving the old good version to watchman.
+- The cache zone setting `inactive=7d` means a file remains on disk (and therefore eligible to be served stale) as long as it has been accessed at least once in the last 7 days.
+- `proxy_ignore_headers Cache-Control Expires ...` is set globally, so the origin cannot force a shorter cache lifetime.
+
+### Real-world example
+
+If the US CSL (`/consolidated.csv`) went down for 3 days:
+
+- A successful copy fetched before the outage would be served normally for the first 48 hours.
+- After 48 hours it would be served as **stale** for the remaining time.
+- Watchman would continue to receive a complete, valid CSV and would not crash or restart.
+- The only ways this protection would be lost are:
+  - The named `cache-storage` volume was deleted (`docker compose down -v` or equivalent).
+  - The cached entry went completely untouched for more than 7 days.
+
+This combination of longer TTLs on the important lists + aggressive stale serving + 7-day disk retention is one of the main reasons this cache setup exists.
+
 ## Customization
 
 ### Cache TTLs
@@ -117,6 +145,8 @@ location = /sdn_comments.csv { ... proxy_cache_valid 200 48h; ... }
 ```
 
 The cache zone itself uses `inactive=7d`.
+
+See the **Outage Resilience & Stale Content Serving** section above for why the 48 h values on the large lists + 7-day inactive retention are important when origins are down for multiple days.
 
 ### Adding a New List
 
