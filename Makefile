@@ -35,7 +35,7 @@ test-short: ## Run unit tests only (skips integration)
 	go test -short -v ./...
 
 clean: down ## Remove generated files and docker resources
-	rm -rf /tmp/watchman-v0.62.0 2>/dev/null || true
+	rm -rf /tmp/watchman-* 2>/dev/null || true
 	docker compose down -v --remove-orphans 2>/dev/null || true
 	docker rmi watchman-cache:local 2>/dev/null || true
 

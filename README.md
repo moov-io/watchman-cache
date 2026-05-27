@@ -1,6 +1,6 @@
 # watchman-cache
 
-A production-hardened nginx reverse-proxy cache for [moov/watchman](https://github.com/moov-io/watchman) sanctions list downloads (v0.62.0+).
+A production-hardened nginx reverse-proxy cache for [moov/watchman](https://github.com/moov-io/watchman) sanctions list downloads.
 
 Government list endpoints (OFAC, trade.gov/Azure, S3 pre-signed URLs, EU, etc.) are frequently flaky. Large CSV responses are regularly truncated mid-transfer, IPv6 records cause connection failures, and 302 redirects to short-lived S3 URLs cause watchman to bypass any cache and hit the origins directly. The result is repeated "unexpected EOF", "max retries", and fatal "problem during initial download" crashes during startup.
 
@@ -25,7 +25,7 @@ This project fronts watchman with a tightly scoped nginx cache that:
 ## Quick Start
 
 ```bash
-# 1. Start everything (builds the cache image + pulls watchman:v0.62.0)
+# 1. Start everything
 make up
 
 # 2. Wait for watchman to finish loading lists (30–120 s on a cold cache)

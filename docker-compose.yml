@@ -1,6 +1,6 @@
 # docker-compose.yml
 #
-# Example stack: nginx cache in front of moov/watchman:v0.62.0
+# Example stack: nginx cache in front of moov/watchman
 # for OFAC, US CSL, and other government sanctions lists.
 #
 # Volumes:

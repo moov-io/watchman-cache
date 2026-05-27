@@ -20,7 +20,7 @@ const (
 )
 
 // TestWatchmanStartsThroughCache brings up the full docker-compose stack
-// (nginx cache + moov/watchman:v0.62.0) and verifies that watchman can
+// (nginx cache + moov/watchman) and verifies that watchman can
 // successfully start and serve requests after downloading its lists
 // through the nginx cache.
 //
@@ -42,7 +42,7 @@ func TestWatchmanStartsThroughCache(t *testing.T) {
 		_ = runComposeDown(t, true)
 	})
 
-	t.Log("Starting docker compose stack (cache + watchman:v0.62.0) ...")
+	t.Log("Starting docker compose stack (cache + watchman) ...")
 
 	// Wait only for the fast cache healthcheck. Watchman data load (even via cache)
 	// can take 30-120s on first run depending on INCLUDED_LISTS size.
