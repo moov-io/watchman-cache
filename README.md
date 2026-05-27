@@ -220,7 +220,7 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 
 ## License
 
-Apache 2.0 (same license as watchman).
+MIT
 
 ## Contributing
 
