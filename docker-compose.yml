@@ -42,7 +42,8 @@ services:
     #       memory: 256M
 
   watchman:
-    image: moov/watchman:v0.62.0
+    # v0.64.0+ required for us_tel (US State Terrorist Exclusion List).
+    image: moov/watchman:v0.65.1
     container_name: watchman
     ports:
       - "8084:8084"   # HTTP API (search, etc.)
@@ -50,11 +51,13 @@ services:
     environment:
       # Which lists to load at startup (comma separated).
       #
-      # Primary set for this cache example: the US CSV-based lists (OFAC, Non-SDN, CSL)
-      # plus EU CSL and FinCEN 311. These are the lists the nginx config + hardening
-      # (redirect following, SNI fixes, long timeouts, 48h TTL on large files) were built for.
-      # US lists are CSV only. We intentionally do NOT default to XML lists here.
-      - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_fincen_311,eu_csl
+      # Primary set for this cache example: the US CSV-based lists (OFAC, Non-SDN, CSL),
+      # US TEL (OpenSanctions JSON), plus EU CSL and FinCEN 311. These are the lists
+      # the nginx config + hardening (redirect following, SNI fixes, long timeouts,
+      # 48h TTL on large files) were built for.
+      # US OFAC/Non-SDN/CSL are CSV only. US TEL is JSON. We intentionally do NOT
+      # default to UN XML here.
+      - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_tel,us_fincen_311,eu_csl
 
       # Point all templated downloads at the nginx cache (root + %s filename).
       # Watchman does fmt.Sprintf(TEMPLATE, "filename.csv") for each file it needs.
@@ -65,6 +68,7 @@ services:
       # Non-templated (full URL) lists. Must match the exact path nginx serves.
       - EU_CSL_DOWNLOAD_URL=http://cache:8080/eu_csl.csv
       - FINCEN_311_DOWNLOAD_URL=http://cache:8080/fincen_311.html
+      - US_TEL_URL=http://cache:8080/us_tel.json
 
       # ---------------------------------------------------------------------
       # Optional lists (UK, UN). These use different env var names and formats.
@@ -79,7 +83,7 @@ services:
       # unexpected EOF". The error will contain the scsanctions.un.org URL.
       # US lists need CSV endpoints (via this cache or the trade.gov default).
       # ---------------------------------------------------------------------
-      # - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_fincen_311,eu_csl,uk_csl,un_csl
+      # - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_tel,us_fincen_311,eu_csl,uk_csl,un_csl
       # - UK_SANCTIONS_LIST_URL=http://cache:8080/UK_Sanctions_List.csv
       # - UN_CONSOLIDATED_LIST_URL=http://cache:8080/un_consolidated.xml
 
