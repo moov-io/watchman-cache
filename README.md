@@ -48,9 +48,9 @@ Point watchman at the cache using its normal environment variables:
 ```yaml
 services:
   watchman:
-    image: moov/watchman:v0.62.0
+    image: moov/watchman:v0.65.1
     environment:
-      - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_fincen_311,eu_csl
+      - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_tel,us_fincen_311,eu_csl
 
       # Templated lists (most common)
       - OFAC_DOWNLOAD_TEMPLATE=http://cache:8080/%s
@@ -60,6 +60,7 @@ services:
       # Non-templated lists
       - EU_CSL_DOWNLOAD_URL=http://cache:8080/eu_csl.csv
       - FINCEN_311_DOWNLOAD_URL=http://cache:8080/fincen_311.html
+      - US_TEL_URL=http://cache:8080/us_tel.json
 ```
 
 ### Supported Lists
@@ -69,12 +70,13 @@ services:
 | US OFAC         | `OFAC_DOWNLOAD_TEMPLATE`                | `/sdn.csv`, `/add.csv`, ...  | 302 → S3 (followed internally)     |
 | US Non-SDN      | `US_NON_SDN_DOWNLOAD_TEMPLATE`          | `/CONS_PRIM.CSV`, ...        | 302 → S3 (followed internally)     |
 | US CSL          | `US_CSL_DOWNLOAD_TEMPLATE` / `_URL`     | `/consolidated.csv`          | ~2 MB, Azure, frequently flaky     |
+| US TEL          | `US_TEL_URL`                            | `/us_tel.json`               | OpenSanctions JSON (~70 KB)        |
 | EU CSL          | `EU_CSL_DOWNLOAD_URL`                   | `/eu_csl.csv`                | >2 MB, 48 h cache                  |
 | UK Sanctions    | `UK_SANCTIONS_LIST_URL`                 | `/UK_Sanctions_List.csv`     | Optional                           |
 | UN CSL          | `UN_CONSOLIDATED_LIST_URL`              | `/un_consolidated.xml`       | XML — use the correct env var!     |
 | FinCEN 311      | `FINCEN_311_DOWNLOAD_URL`               | `/fincen_311.html`           | Small HTML page                    |
 
-**Important**: US lists are CSV only. Feeding the UN XML URL into any `US_CSL_*` variable will produce exactly the parse error the cache was built to avoid.
+**Important**: US OFAC / Non-SDN / CSL are CSV only. Feeding the UN XML URL into any `US_CSL_*` variable will produce exactly the parse error the cache was built to avoid. US TEL is JSON (`us_tel.json`) via OpenSanctions and uses `US_TEL_URL` (requires watchman v0.64.0+).
 
 ## How the Cache Actually Works
 
@@ -193,7 +195,7 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 
 ## Troubleshooting
 
-**First start is slow** — expected on a cold volume. With the default `INCLUDED_LISTS`, 11 files are fetched from the internet on a true cold start (4 OFAC + 4 Non-SDN + CSL + EU CSL + FinCEN 311). Subsequent starts should be seconds.
+**First start is slow** — expected on a cold volume. With the default `INCLUDED_LISTS`, 12 files are fetched from the internet on a true cold start (4 OFAC + 4 Non-SDN + CSL + US TEL + EU CSL + FinCEN 311). Subsequent starts should be seconds.
 
 **Still seeing "unexpected EOF" or "max retries" on cold start?**
 - This is almost always a transient origin failure during the initial parallel burst.
