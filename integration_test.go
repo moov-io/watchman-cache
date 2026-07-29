@@ -248,6 +248,7 @@ func verifyNoLoadErrorsInWatchmanLogs(t *testing.T) error {
 		"finished OFAC download",
 		"finished US Non-SDN download",
 		"finished EU CSL download",
+		"finished US TEL download",
 	}
 	foundGood := 0
 	for _, good := range goodSignals {
