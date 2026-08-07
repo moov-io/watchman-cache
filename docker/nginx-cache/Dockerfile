@@ -1,4 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 # Add curl for healthchecks (small addition)
 RUN apk add --no-cache curl
