@@ -43,7 +43,7 @@ services:
 
   watchman:
     # v0.64.0+ required for us_tel (US State Terrorist Exclusion List).
-    image: moov/watchman:v0.65.2
+    image: moov/watchman:v0.66.0
     container_name: watchman
     ports:
       - "8084:8084"   # HTTP API (search, etc.)
