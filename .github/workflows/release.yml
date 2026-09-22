@@ -1,0 +1,116 @@
+# Use https://app.stepsecurity.io/ to improve workflow security
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions: {}
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Ensure GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "unexpected tag" >&2; exit 1 ;;
+          esac
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "Release $TAG" \
+              --notes "Publishing the watchman-cache image. Notes are updated after the image push finishes."
+          fi
+
+  docker:
+    name: Publish image
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: env.DOCKER_USERNAME != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to Quay
+        if: env.QUAY_USERNAME != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Image tags
+        id: tags
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "unexpected tag" >&2; exit 1 ;;
+          esac
+          owner_repo=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
+          tags="ghcr.io/${owner_repo}:${TAG},ghcr.io/${owner_repo}:latest"
+          if [ -n "$DOCKER_USERNAME" ]; then
+            tags="${tags},moov/watchman-cache:${TAG},moov/watchman-cache:latest"
+          fi
+          if [ -n "$QUAY_USERNAME" ]; then
+            tags="${tags},quay.io/moov/watchman-cache:${TAG},quay.io/moov/watchman-cache:latest"
+          fi
+          echo "list=${tags}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: docker/nginx-cache
+          file: docker/nginx-cache/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/moov-io/watchman-cache
+            org.opencontainers.image.title=watchman-cache
+            org.opencontainers.image.description=nginx reverse-proxy cache for moov/watchman sanctions list downloads
+            org.opencontainers.image.revision=${{ github.sha }}

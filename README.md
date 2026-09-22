@@ -17,7 +17,7 @@ This project fronts watchman with a tightly scoped nginx cache that:
 - **302 redirect following** inside nginx (`@follow_redirect`) so the final content is cached under the stable filename for all supported lists
 - **Hardened large-file handling** — 512 KiB buffers, 180 s read timeouts, `proxy_next_upstream` retries on the critical paths
 - **IPv6 safety** — resolver configured with `ipv6=off` (public DNS with fallback behavior)
-- **Long-lived cache** — 48 h for the large/flaky lists, 7 d inactive eviction on the cache zone
+- **Long-lived cache** — 48 h freshness on every allow-listed file, 7 d inactive eviction on the cache zone
 - **Stale-while-revalidate** + background updates for resilience during origin outages
 - **Named volume persistence** — needed for durable caching
 - Pure-stdlib Go integration test that validates the full cold-start flow
@@ -35,11 +35,29 @@ make ping
 # 3. Watch cache behavior (MISS → later HITs)
 make logs-cache
 
-# 4. Tear everything down (including the cache volume)
+# 4. Stop the stack. The cache volume is kept.
 make down
+
+# Remove containers, the cache volume, and the local image
+make teardown
 ```
 
 The cache listens on **localhost:3000** (easy to match common `http://localhost:3000/%s` examples). Watchman is on the usual 8084/9094 ports.
+
+## Prebuilt image
+
+Tagged releases publish a multi-arch image (`linux/amd64`, `linux/arm64`) that already contains this nginx config:
+
+- `moov/watchman-cache` (Docker Hub)
+- `ghcr.io/moov-io/watchman-cache`
+- `quay.io/moov/watchman-cache`
+
+```bash
+docker pull moov/watchman-cache:v1.0.0
+docker run --rm -p 3000:8080 -v watchman-cache-storage:/var/cache/nginx moov/watchman-cache:v1.0.0
+```
+
+`make up` still builds `watchman-cache:local` from this repo. To run a published tag from Compose, set `image:` to that tag and remove the `build:` block. Mount a volume at `/var/cache/nginx` and keep it across deploys. Docker Hub and Quay pushes run when those registry credentials are configured for this repository. GHCR is published on every `v*.*.*` tag.
 
 ## Wiring Watchman to the Cache
 
@@ -48,11 +66,12 @@ Point watchman at the cache using its normal environment variables:
 ```yaml
 services:
   watchman:
-    image: moov/watchman:v0.65.1
+    image: moov/watchman:v0.68.0
     environment:
       - INCLUDED_LISTS=us_ofac,us_non_sdn,us_csl,us_tel,us_fincen_311,eu_csl
 
-      # Templated lists (most common)
+      # Templated lists (most common). Flat filenames or the origin paths
+      # both work. See "Upstream-shaped paths" below.
       - OFAC_DOWNLOAD_TEMPLATE=http://cache:8080/%s
       - US_CSL_DOWNLOAD_TEMPLATE=http://cache:8080/%s
       - US_NON_SDN_DOWNLOAD_TEMPLATE=http://cache:8080/%s
@@ -61,6 +80,10 @@ services:
       - EU_CSL_DOWNLOAD_URL=http://cache:8080/eu_csl.csv
       - FINCEN_311_DOWNLOAD_URL=http://cache:8080/fincen_311.html
       - US_TEL_URL=http://cache:8080/us_tel.json
+
+      # Watchman defaults this to 60s. Cold fetches of the large CSVs can
+      # take longer while nginx is still reading the origin (180s).
+      - DOWNLOAD_TIMEOUT=180s
 ```
 
 ### Supported Lists
@@ -77,6 +100,25 @@ services:
 | FinCEN 311      | `FINCEN_311_DOWNLOAD_URL`               | `/fincen_311.html`           | Small HTML page                    |
 
 **Important**: US OFAC / Non-SDN / CSL are CSV only. Feeding the UN XML URL into any `US_CSL_*` variable will produce exactly the parse error the cache was built to avoid. US TEL is JSON (`us_tel.json`) via OpenSanctions and uses `US_TEL_URL` (requires watchman v0.64.0+).
+
+### Upstream-shaped paths
+
+Watchman's configuration docs keep the origin path and only change the host. Those URLs used to 404 here. They are rewritten onto the flat filenames above and share the same cache entry:
+
+```text
+OFAC_DOWNLOAD_TEMPLATE=http://cache:8080/api/PublicationPreview/exports/%s
+US_NON_SDN_DOWNLOAD_TEMPLATE=http://cache:8080/api/PublicationPreview/exports/%s
+US_CSL_DOWNLOAD_TEMPLATE=http://cache:8080/downloadable_consolidated_screening_list/v1/%s
+EU_CSL_DOWNLOAD_URL=http://cache:8080/fsd/fsf/public/files/csvFullSanctionsList_1_1/content
+UK_SANCTIONS_LIST_URL=http://cache:8080/docs/UK-Sanctions-List.csv
+UN_CONSOLIDATED_LIST_URL=http://cache:8080/resources/xml/en/consolidated.xml
+FINCEN_311_DOWNLOAD_URL=http://cache:8080/resources/statutes-and-regulations/311-and-9714-special-measures
+US_TEL_URL=http://cache:8080/datasets/latest/us_state_terrorist_exclusion/targets.nested.json
+```
+
+FinCEN's origin answers that path with a relative redirect to `/resources/statutes-and-regulations/special-measures`. The cache follows it and also accepts that path directly. Both are stored as `/fincen_311.html`.
+
+Inside this compose file the cache answers as `cache` or `watchman-cache` on port 8080. From the host it is `localhost:3000`. The flat `http://cache:8080/%s` form is what `docker-compose.yml` sets. Unknown names still return 404.
 
 ## How the Cache Actually Works
 
@@ -98,8 +140,8 @@ The named volume `cache-storage` mounted at `/var/cache/nginx` is the highest-le
 To force a completely cold start (useful for testing):
 
 ```bash
-docker compose down -v
-docker compose up -d --build --wait
+make teardown
+make up
 ```
 
 ## Outage Resilience & Stale Content Serving
@@ -108,10 +150,8 @@ This is the mechanism that protects watchman when government sources are complet
 
 ### How it works
 
-- Cached responses have a **freshness lifetime** controlled by `proxy_cache_valid`:
-  - **48 hours** for the large/flaky lists: `/consolidated.csv`, `/eu_csl.csv`, and all 8 OFAC/Non-SDN files (`sdn*.csv`, `CONS_*.CSV`, etc.)
-  - **24 hours** for smaller lists (the global default)
-- After the freshness lifetime expires, the cached copy is marked **stale**.
+- Cached responses have a **freshness lifetime** of **48 hours** on every allow-listed file. Each list location sets `proxy_cache_valid 200 48h` (OFAC, Non-SDN, US CSL, US TEL, EU CSL, UK, UN, and FinCEN 311). The global default of 24 hours is not used for those paths.
+- After 48 hours, the cached copy is marked **stale**.
 - When the origin is down or returns errors, the directive `proxy_cache_use_stale error timeout ... http_5xx updating` tells nginx to **serve the stale copy** to the client (watchman) instead of failing the request.
 - `proxy_cache_background_update on` lets nginx attempt to refresh the content in the background while still serving the old good version to watchman.
 - The cache zone setting `inactive=7d` means a file remains on disk (and therefore eligible to be served stale) as long as it has been accessed at least once in the last 7 days.
@@ -125,10 +165,10 @@ If the US CSL (`/consolidated.csv`) went down for 3 days:
 - After 48 hours it would be served as **stale** for the remaining time.
 - Watchman would continue to receive a complete, valid CSV and would not crash or restart.
 - The only ways this protection would be lost are:
-  - The named `cache-storage` volume was deleted (`docker compose down -v` or equivalent).
+  - The named `cache-storage` volume was deleted (`make teardown`, or `docker compose down -v`).
   - The cached entry went completely untouched for more than 7 days.
 
-This combination of longer TTLs on the important lists + aggressive stale serving + 7-day disk retention is one of the main reasons this cache setup exists.
+48-hour freshness on every allow-listed file, stale serving, and 7-day disk retention are why this cache exists.
 
 ## Customization
 
@@ -137,18 +177,17 @@ This combination of longer TTLs on the important lists + aggressive stale servin
 Edit `docker/nginx-cache/nginx.conf`:
 
 ```nginx
-# Global defaults
+# Global default. Every list location overrides this to 48h.
 proxy_cache_valid 200 24h;
 
-# Per-location overrides already present for the big files
 location = /consolidated.csv { ... proxy_cache_valid 200 48h; ... }
-location = /sdn_comments.csv { ... proxy_cache_valid 200 48h; ... }
-# etc.
+location = /us_tel.json { ... proxy_cache_valid 200 48h; ... }
+location = /fincen_311.html { ... proxy_cache_valid 200 48h; ... }
 ```
 
 The cache zone itself uses `inactive=7d`.
 
-See the **Outage Resilience & Stale Content Serving** section above for why the 48 h values on the large lists + 7-day inactive retention are important when origins are down for multiple days.
+See the **Outage Resilience & Stale Content Serving** section above for why the 48 h lifetime on every list plus 7-day inactive retention matters when an origin is down for multiple days.
 
 ### Adding a New List
 
@@ -186,12 +225,13 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 | Target         | Description                              |
 |----------------|------------------------------------------|
 | `make up`      | Build cache + start both services        |
-| `make down`    | Stop and remove containers + volume      |
+| `make down`    | Stop containers and keep the cache volume |
+| `make teardown`| Remove containers, cache volume, and local image |
 | `make logs`    | Tail both services                       |
 | `make logs-cache` / `logs-watchman` | Tail just one side                |
 | `make ping`    | Quick health check against watchman      |
 | `make test`    | Run the integration test                 |
-| `make clean`   | Nuclear option (images + volumes)        |
+| `make clean`   | Same delete as `make teardown`, plus local temp files |
 
 ## Troubleshooting
 
@@ -199,6 +239,7 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 
 **Still seeing "unexpected EOF" or "max retries" on cold start?**
 - This is almost always a transient origin failure during the initial parallel burst.
+- Watchman's download client times out at `DOWNLOAD_TIMEOUT`, which defaults to **60s**. nginx will keep reading a cold origin for up to **180s**. If Watchman gives up first, raise `DOWNLOAD_TIMEOUT` (this stack sets `180s`) so the client waits for the cache to finish the fetch.
 - The cache + named volume makes the *second* and later starts reliable.
 - Capture `make logs-cache` and `make logs-watchman` around the failure window.
 
@@ -209,13 +250,14 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 - You set `US_CSL_DOWNLOAD_URL` (or the template) to the UN consolidated XML URL. US lists are CSV only. See the warning block in `docker-compose.yml`.
 
 **Cache never hits**
-- You are running with `-v` (volume removal) on every restart.
+- `make teardown` or `docker compose down -v` ran between starts. `make down` stops containers and keeps the volume.
 - The bind mount for `nginx.conf` is missing or wrong.
 
 ## Production Notes
 
-- Mount the nginx config read-only from your own repository or config management.
-- Keep the `cache-storage` volume for the lifetime of the deployment.
+- Pull a published tag (`moov/watchman-cache:v1.0.0`, `ghcr.io/moov-io/watchman-cache:v1.0.0`, or `quay.io/moov/watchman-cache:v1.0.0`) or mount the nginx config read-only from your own repository.
+- Set `DOWNLOAD_TIMEOUT=180s` on Watchman. The default of 60s is shorter than this cache's cold-origin read timeout.
+- Keep the `cache-storage` volume for the lifetime of the deployment. Stop with `make down`. `make teardown` deletes the volume.
 - Consider increasing `max_size` on the cache zone if you run many lists or very long TTLs.
 - The healthcheck on the cache (`/health`) is intentionally trivial and fast.
 - Watch the access log for `cache:MISS` rates after the initial population window.

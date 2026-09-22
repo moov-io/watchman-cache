@@ -5,27 +5,37 @@
 #
 # Volumes:
 #   - cache-config (via bind mount): easy to edit nginx.conf without image rebuild
-#   - cache-storage: named volume for persistent 24h proxy cache across restarts
+#   - cache-storage: named volume. Lists stay fresh for 48h and on disk for 7d
+#     of inactivity. Keep this volume across restarts.
 #
 # Usage:
 #   docker compose up -d --build --wait
 #   # watchman will download lists via http://cache:8080/...
 #   curl http://localhost:8084/ping
-#   docker compose down -v
+#   docker compose stop          # stop containers, keep the cache volume
+#   docker compose down -v       # delete containers and the cache volume
 
 services:
   cache:
     build:
       context: docker/nginx-cache
       dockerfile: Dockerfile
+    # Tagged releases are also published as moov/watchman-cache,
+    # ghcr.io/moov-io/watchman-cache, and quay.io/moov/watchman-cache.
+    # `make up` builds this local tag. Drop `build:` to run a published tag.
     image: watchman-cache:local
     container_name: watchman-cache
+    networks:
+      default:
+        aliases:
+          # Watchman's docs use this hostname. The service name `cache` also resolves.
+          - watchman-cache
     ports:
       - "3000:8080"   # Matches common OFAC_DOWNLOAD_TEMPLATE=http://localhost:3000/%s examples
     volumes:
       # Bind mount for config: edit locally, `docker compose restart cache` to apply
       - ./docker/nginx-cache/nginx.conf:/etc/nginx/nginx.conf:ro
-      # Named volume for cache storage (CSVs, headers, etc). Persists 24h+ cached responses.
+      # Named volume for cache storage (CSVs, headers, etc). Fresh for 48h, kept 7d.
       - cache-storage:/var/cache/nginx
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -92,6 +102,11 @@ services:
 
       # Logging / tuning (optional)
       - LOG_FORMAT=plain
+
+      # Watchman's download client defaults to 60s. A cold fetch of the large
+      # CSVs can run longer than that while nginx is still reading the origin
+      # (proxy_read_timeout 180s). Raise the client timeout to match.
+      - DOWNLOAD_TIMEOUT=180s
     depends_on:
       cache:
         condition: service_healthy

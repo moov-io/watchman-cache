@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs test test-short clean pull
+.PHONY: help up down teardown restart logs test test-short clean pull
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -11,8 +11,12 @@ up: ## Build (if needed) and start cache + watchman (waits only for cache; watch
 	docker compose up -d watchman
 	@echo "Cache is ready. Watchman is starting (use 'make ping' or 'docker compose logs -f watchman' to observe data load via cache)"
 
-down: ## Stop and remove containers + volumes
-	docker compose down -v
+down: ## Stop containers and keep the cache volume
+	docker compose stop
+
+teardown: ## Remove containers, the cache volume, and the local image
+	docker compose down -v --remove-orphans
+	docker rmi watchman-cache:local 2>/dev/null || true
 
 restart: ## Restart the stack
 	docker compose restart
@@ -34,10 +38,8 @@ test: ## Run the Go integration test (brings stack up, verifies watchman starts 
 test-short: ## Run unit tests only (skips integration)
 	go test -short -v ./...
 
-clean: down ## Remove generated files and docker resources
+clean: teardown ## Remove generated files and docker resources
 	rm -rf /tmp/watchman-* 2>/dev/null || true
-	docker compose down -v --remove-orphans 2>/dev/null || true
-	docker rmi watchman-cache:local 2>/dev/null || true
 
 # Quick manual verification targets
 ping: ## Hit watchman /ping (stack must be up)
