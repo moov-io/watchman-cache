@@ -131,7 +131,7 @@ The `@follow_redirect` location and the 8 calling locations contain the large-bu
 
 ## Persistence Strategy (The Real Secret)
 
-The named volume `cache-storage` mounted at `/var/cache/nginx` is the highest-leverage thing in this setup.
+The named volume `cache-storage` mounted at `/var/cache/nginx` is the highest-leverage thing in this setup. Cached bodies live in `cache/` inside that mount, not at the volume root. An ext4 volume has a root-owned `lost+found` directory there, and nginx logs a permission error if it tries to scan it.
 
 - A successful cold start populates the volume with complete copies.
 - Every future `docker compose up` (without `-v`) is fast and almost entirely cache hits.
