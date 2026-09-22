@@ -51,10 +51,19 @@ func TestWatchmanStartsThroughCache(t *testing.T) {
 	// Wait only for the fast cache healthcheck. Watchman data load (even via cache)
 	// can take 30-120s on first run depending on INCLUDED_LISTS size.
 	if err := runComposeUpWaitCacheOnly(t); err != nil {
-		t.Fatalf("docker compose up --wait for cache failed: %v", err)
+		dumpLogs(t, "cache")
+		t.Fatalf("docker compose up for cache failed: %v", err)
 	}
-	// Now bring up watchman (it will start its initial download through the cache)
-	if err := runCmd(t, "docker", "compose", "up", "-d", "watchman"); err != nil {
+	if err := waitForHTTP200(t, cacheHealth, 30*time.Second); err != nil {
+		dumpLogs(t, "cache")
+		t.Fatalf("cache /health never became healthy: %v", err)
+	}
+	// --no-deps: `up watchman` otherwise reconciles the cache service. On the
+	// Compose version used by GitHub Actions that recreates the cache container
+	// and fails its service_healthy dependency before nginx is listening.
+	if err := runCmd(t, "docker", "compose", "up", "-d", "--no-deps", "watchman"); err != nil {
+		dumpLogs(t, "cache")
+		dumpLogs(t, "watchman")
 		t.Fatalf("failed to start watchman container: %v", err)
 	}
 	t.Logf("Cache healthy, watchman starting (data load via cache can take 30-120s)...")

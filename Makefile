@@ -8,7 +8,8 @@ pull: ## Pull the pinned watchman image
 
 up: ## Build (if needed) and start cache + watchman (waits only for cache; watchman data load takes 30-120s)
 	docker compose up -d --build --wait --wait-timeout 60 cache
-	docker compose up -d watchman
+	# --no-deps keeps Compose from recreating the cache container, which races its healthcheck.
+	docker compose up -d --no-deps watchman
 	@echo "Cache is ready. Watchman is starting (use 'make ping' or 'docker compose logs -f watchman' to observe data load via cache)"
 
 down: ## Stop containers and keep the cache volume

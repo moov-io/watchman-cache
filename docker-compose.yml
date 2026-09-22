@@ -38,7 +38,8 @@ services:
       # Named volume for cache storage (CSVs, headers, etc). Fresh for 48h, kept 7d.
       - cache-storage:/var/cache/nginx
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # 127.0.0.1 avoids curl trying ::1 first. nginx listens on IPv4 only.
+      test: ["CMD", "curl", "-4", "-f", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 3s
       retries: 8
