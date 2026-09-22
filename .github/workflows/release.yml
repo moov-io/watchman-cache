@@ -34,9 +34,15 @@ jobs:
               --notes "Publishing the watchman-cache image. Notes are updated after the image push finishes."
           fi
 
+  test:
+    name: Test
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+
   docker:
     name: Publish image
-    needs: [release]
+    needs: [release, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read

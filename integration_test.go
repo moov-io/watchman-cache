@@ -30,8 +30,12 @@ func TestWatchmanStartsThroughCache(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	// Ensure docker and docker compose are available
+	// Ensure docker and docker compose are available. CI must fail closed:
+	// a green run that skipped the only test is not a pass.
 	if _, err := exec.LookPath("docker"); err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("docker not found in PATH: %v", err)
+		}
 		t.Skip("docker not found in PATH; skipping integration test")
 	}
 

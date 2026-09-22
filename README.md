@@ -211,11 +211,11 @@ docker compose restart cache
 
 ## Testing
 
-A pure-Go integration test (no external dependencies) exists:
+A pure-Go integration test (no external dependencies) exists. GitHub Actions runs it on every branch push and pull request.
 
 ```bash
-make test          # full cold-start + log validation (can take up to 8 min)
-make test-short    # unit tests only
+make test          # full cold-start + log validation (can take up to 15 min)
+make test-short    # skips the integration test
 ```
 
 It brings the stack up, waits for health, asserts that watchman reports PONG, and greps logs for both positive ("finished X download") and negative failure strings.

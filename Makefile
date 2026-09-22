@@ -31,9 +31,9 @@ logs-watchman: ## Tail only watchman logs (shows download progress)
 	docker compose logs -f watchman
 
 test: ## Run the Go integration test (brings stack up, verifies watchman starts via cache)
-	# 8m total allows for occasional cold-start truncation on consolidated.csv
-	# (Azure origin flakes) + one watchman fatal/restart + successful second load.
-	go test -v -run TestWatchmanStartsThroughCache -count=1 -timeout 8m .
+	# 15m covers a cold watchman image pull plus one restart if consolidated.csv
+	# is truncated on the first fetch.
+	go test -v -run TestWatchmanStartsThroughCache -count=1 -timeout 15m .
 
 test-short: ## Run unit tests only (skips integration)
 	go test -short -v ./...
