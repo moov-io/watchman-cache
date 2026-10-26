@@ -1,7 +1,8 @@
 FROM nginx:1.31-alpine
 
-# Add curl for healthchecks (small addition)
-RUN apk add --no-cache curl
+# curl for healthchecks. nginx:1.31-alpine still ships brotli-libs 1.2.0;
+# 1.2.1 is the patched decoder.
+RUN apk add --no-cache curl 'brotli-libs>=1.2.1-r0'
 
 # Default nginx config (can be overridden via volume mount)
 COPY nginx.conf /etc/nginx/nginx.conf
