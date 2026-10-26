@@ -53,9 +53,11 @@ Tagged releases publish a multi-arch image (`linux/amd64`, `linux/arm64`) that a
 - `quay.io/moov/watchman-cache`
 
 ```bash
-docker pull moov/watchman-cache:v1.0.0
-docker run --rm -p 3000:8080 -v watchman-cache-storage:/var/cache/nginx moov/watchman-cache:v1.0.0
+docker pull moov/watchman-cache:v1.0.2
+docker run --rm -p 3000:8080 -v watchman-cache-storage:/var/cache/nginx moov/watchman-cache:v1.0.2
 ```
+
+Current multi-arch digest: `sha256:69a34585d364972f74e3bb2db5617055ee95d70afa469dbd00c67a8d65517556`.
 
 `make up` still builds `watchman-cache:local` from this repo. To run a published tag from Compose, set `image:` to that tag and remove the `build:` block. Mount a volume at `/var/cache/nginx` and keep it across deploys. Docker Hub and Quay pushes run when those registry credentials are configured for this repository. GHCR is published on every `v*.*.*` tag.
 
@@ -255,7 +257,7 @@ It brings the stack up, waits for health, asserts that watchman reports PONG, an
 
 ## Production Notes
 
-- Pull a published tag (`moov/watchman-cache:v1.0.0`, `ghcr.io/moov-io/watchman-cache:v1.0.0`, or `quay.io/moov/watchman-cache:v1.0.0`) or mount the nginx config read-only from your own repository.
+- Pull a published tag (`moov/watchman-cache:v1.0.2`, `ghcr.io/moov-io/watchman-cache:v1.0.2`, or `quay.io/moov/watchman-cache:v1.0.2`) or mount the nginx config read-only from your own repository.
 - Set `DOWNLOAD_TIMEOUT=180s` on Watchman. The default of 60s is shorter than this cache's cold-origin read timeout.
 - Keep the `cache-storage` volume for the lifetime of the deployment. Stop with `make down`. `make teardown` deletes the volume.
 - Consider increasing `max_size` on the cache zone if you run many lists or very long TTLs.
