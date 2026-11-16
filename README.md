@@ -114,11 +114,11 @@ US_CSL_DOWNLOAD_TEMPLATE=http://cache:8080/downloadable_consolidated_screening_l
 EU_CSL_DOWNLOAD_URL=http://cache:8080/fsd/fsf/public/files/csvFullSanctionsList_1_1/content
 UK_SANCTIONS_LIST_URL=http://cache:8080/docs/UK-Sanctions-List.csv
 UN_CONSOLIDATED_LIST_URL=http://cache:8080/resources/xml/en/consolidated.xml
-FINCEN_311_DOWNLOAD_URL=http://cache:8080/resources/statutes-and-regulations/311-and-9714-special-measures
+FINCEN_311_DOWNLOAD_URL=http://cache:8080/resources/statutes-and-regulations/special-measures/
 US_TEL_URL=http://cache:8080/datasets/latest/us_state_terrorist_exclusion/targets.nested.json
 ```
 
-FinCEN's origin answers that path with a relative redirect to `/resources/statutes-and-regulations/special-measures`. The cache follows it and also accepts that path directly. Both are stored as `/fincen_311.html`.
+FinCEN moved Special Measures to `/resources/statutes-and-regulations/special-measures/` in November 2026. The previous `/311-and-9714-special-measures` path is an HTTP 200 meta-refresh stub, which nginx does not follow. The cache fetches the new page and rewrites both origin-shaped paths onto `/fincen_311.html`.
 
 Inside this compose file the cache answers as `cache` or `watchman-cache` on port 8080. From the host it is `localhost:3000`. The flat `http://cache:8080/%s` form is what `docker-compose.yml` sets. Unknown names still return 404.
 
