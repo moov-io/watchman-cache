@@ -54,7 +54,7 @@ services:
 
   watchman:
     # v0.64.0+ required for us_tel (US State Terrorist Exclusion List).
-    image: moov/watchman:v1.3.1
+    image: moov/watchman:v1.3.2
     container_name: watchman
     ports:
       - "8084:8084"   # HTTP API (search, etc.)
@@ -80,6 +80,10 @@ services:
       - EU_CSL_DOWNLOAD_URL=http://cache:8080/eu_csl.csv
       - FINCEN_311_DOWNLOAD_URL=http://cache:8080/fincen_311.html
       - US_TEL_URL=http://cache:8080/us_tel.json
+
+      # EU FSF origin returns HTTP 500 for csvFullSanctionsList_1_1. Watchman
+      # treats an empty EU download as fatal, so ignore it until the origin recovers.
+      - IGNORED_DOWNLOAD_ERRORS=eu_csl
 
       # ---------------------------------------------------------------------
       # Optional lists (UK, UN). These use different env var names and formats.
