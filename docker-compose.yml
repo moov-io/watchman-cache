@@ -81,6 +81,10 @@ services:
       - FINCEN_311_DOWNLOAD_URL=http://cache:8080/fincen_311.html
       - US_TEL_URL=http://cache:8080/us_tel.json
 
+      # EU FSF origin returns HTTP 500 for csvFullSanctionsList_1_1. Watchman
+      # treats an empty EU download as fatal, so ignore it until the origin recovers.
+      - IGNORED_DOWNLOAD_ERRORS=eu_csl
+
       # ---------------------------------------------------------------------
       # Optional lists (UK, UN). These use different env var names and formats.
       # UN is XML (not CSV). If you add them to INCLUDED_LISTS you MUST also
